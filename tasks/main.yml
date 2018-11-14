@@ -1,2 +1,143 @@
 ---
-# tasks file for laravel-debian
+- block:
+
+    - name: copy sources.list
+      template:
+        src: files/sources.list.j2
+        dest: /etc/apt/sources.list
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: upgrade system
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+      register: system_upgraded
+
+    - name: reboot system
+      reboot:
+        reboot_timeout: 60
+      when: system_upgraded.changed == 1
+
+  rescue:
+  
+    - debug:
+        msg: system could not be upgraded
+
+# create user
+- block:
+
+    - name: create laravel group
+      group:
+        name: '{{ user.name }}'
+        gid: '{{ user.id }}'
+
+    - name: create laravel user
+      user:
+        name: '{{ user.name }}'
+        uid: '{{ user.id }}'
+        group: '{{ user.name }}'
+        groups: www-data
+        home: /home/{{ user.name }}
+
+    - name: create .ssh directory
+      file:
+        state: directory
+        path: /home/{{ user.name }}/.ssh
+        owner: '{{ user.name }}'
+        group: '{{ user.name }}'
+        mode: u=rwx,go-rwx
+
+    - name: copy ssh-key
+      copy:
+        src: '{{ user.ssh_key }}'
+        dest: /home/{{ user.name }}/.ssh/authorized_keys
+
+  rescue:
+
+    - debug:
+        msg: user creation failed
+
+
+# install services
+- name: install packages
+  apt:
+    name: '{{ packages }}'
+
+# configure database
+- block:
+
+    - name: create database
+      mysql_db:
+        name: laravel
+        state: present
+    
+    - name: create database user
+      mysql_user:
+        name: laravel
+        password: '{{ user.password }}'
+        priv: 'laravel.*:ALL'
+        state: present
+      no_log: yes
+
+# install laravel via composer
+- block:
+
+    - name: set permissions
+      file:
+        state: directory
+        path: /var/www
+        owner: '{{ user.name }}'
+        group: www-data
+        mode: u=rwx,g=rwx,o-rwx,g+s
+        recurse: yes
+
+    - name: install laravel
+      composer:
+        command: create-project
+        arguments: laravel/laravel
+        prefer_dist: yes
+        working_dir: /var/www/.
+      become: yes
+      become_method: su
+      become_user: '{{ user.name }}'
+  
+  rescue:
+
+    - name: update laravel
+      composer:
+        command: update
+        working_dir: /var/www/laravel/.
+  
+  always:
+
+    - name: set permissions
+      file:
+        state: directory
+        path: /var/www/laravel/storage
+        owner: '{{ user.name }}'
+        group: www-data
+        mode: u=rwx,g=rwx,o-rwx,g+s
+        recurse: yes
+
+# configure webserver
+- block:
+
+    - name: copy apache2 template
+      template:
+        src: files/apache2.conf.j2
+        dest: /etc/apache2/sites-available/000-default.conf
+        owner: root
+        group: root
+        mode: 0644
+      notify: restart apache2
+
+    - name: enable modules
+      apache2_module:
+        name: '{{ item }}'
+        state: present
+      with_items:
+        - rewrite
+        - headers

@@ -1,2 +1,14 @@
 ---
-# vars file for laravel-debian
+packages:
+  - zip
+  - apache2
+  - mariadb-server
+  - python-mysqldb
+  - openssl
+  - php
+  - php-mysql
+  - php-mbstring
+  - php-zip
+  - php-xml
+  - php-json
+  - composer

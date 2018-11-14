@@ -1,2 +1,8 @@
 ---
-# defaults file for laravel-debian
+debian:
+  version: testing
+user:
+  name: laravel
+  id: 1111
+  ssh_key: files/ssh_key
+  password: correctbatteryhorsestaple
